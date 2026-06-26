@@ -61,8 +61,12 @@ of work:
 ## Blocking and work ordering
 
 A problem is **blocking** for a PR if it prevents verifying that PR's acceptance
-criteria or makes the change non-functional. A failure that reproduces
-**identically on the base branch** is *pre-existing and regression-free* — by
+criteria or makes the change non-functional. Always judge against a **freshly
+fetched** base (`origin/<base>`) and the **merged** result, never a stale branch:
+a failure that occurs only on a behind/un-rebased PR branch but not on current
+base means the branch is stale (→ `status:needs-rebase`), and must **never** be
+used to reopen a fixed issue. A failure that reproduces **identically on
+freshly-fetched `origin/<base>`** is *pre-existing and regression-free* — by
 itself it is **not** blocking (but it still must be a tracked open issue).
 
 - **Non-blocking** → proceed/pass, citing the tracked issue (`see #N`).
