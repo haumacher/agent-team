@@ -11,7 +11,7 @@
 //   PLUGIN_NS    skill namespace prefix (default: "agent-team")
 //   DRY_RUN      "1" -> log decisions only. DEFAULT IS LIVE: agents spawn and may
 //                push commits, open PRs, and merge. Set DRY_RUN=1 to preview.
-//   LOG_DIR      per-agent log directory (default: <tmp>/agent-team-logs)
+//   LOG_DIR      per-agent log directory (default: <tmp>/agent-team-logs/<repo>)
 //   CLAUDE_FLAGS flags passed to `claude` (default: --permission-mode bypassPermissions)
 
 const https = require('https');
@@ -21,11 +21,14 @@ const os = require('os');
 const path = require('path');
 const cfg = require(path.join(__dirname, '..', 'lib', 'config.js'));
 
-const CHANNEL = process.env.CHANNEL || cfg.load().channel;
+const cfgData = cfg.load();
+const CHANNEL = process.env.CHANNEL || cfgData.channel;
 const REPO = process.env.REPO || process.cwd();
 const NS = process.env.PLUGIN_NS || 'agent-team';
 const DRY_RUN = process.env.DRY_RUN === '1';          // default: LIVE
-const LOG_DIR = process.env.LOG_DIR || path.join(os.tmpdir(), 'agent-team-logs');
+// Per-project log dir so concurrent dispatchers for different repos never clash.
+const PROJECT_KEY = (cfgData.repo || REPO).replace(/[^A-Za-z0-9._-]+/g, '_');
+const LOG_DIR = process.env.LOG_DIR || path.join(os.tmpdir(), 'agent-team-logs', PROJECT_KEY);
 const CLAUDE_FLAGS = (process.env.CLAUDE_FLAGS ||
   '--permission-mode bypassPermissions').split(' ').filter(Boolean);
 

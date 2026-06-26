@@ -53,7 +53,8 @@ agent-team-dispatch          # LIVE: agents push/open/merge. Set DRY_RUN=1 to pr
 
 Then file an issue labeled `status:backlog` (or `/agent-team:role-pm <description>`)
 and watch it flow through the team. Each agent's step-by-step log is written under
-`$TMPDIR/agent-team-logs/`; the dispatcher prints a `tail -f` path per agent.
+`$TMPDIR/agent-team-logs/<repo>/` (per-project, so multiple repos don't clash);
+the dispatcher prints a `tail -f` path per agent.
 
 Just want PR notifications? `agent-team-watch opened` blocks until the next PR.
 
