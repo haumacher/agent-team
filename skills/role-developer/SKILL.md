@@ -32,17 +32,29 @@ edit the shared working copy. `git worktree remove` when done.
 
 ## Mode A — implement a backlog issue (#N)
 1. Verify issue #N still has `status:backlog`; if not, stop.
-2. Branch `feature/<N>-<slug>` off `origin/<base>`.
-3. Implement to satisfy the acceptance criteria. If `$BUILD` is set, run it to
+2. **Check for an existing PR before writing any code** — reuse beats duplication:
+   ```bash
+   gh pr list --repo "$REPO" --state open --search "#N" \
+     --json number,title,headRefName,body,labels
+   ```
+   Treat a PR as already targeting #N if its body says `Closes #N`/`Fixes #N` or
+   it clearly addresses the issue. If one exists, do **not** open a second PR —
+   adopt it into the pipeline instead:
+   - It carries no `status:*` label (never entered the workflow) → comment
+     `🛠️ **Developer:** PR #P already targets #N — routing it into testing.`,
+     label PR #P `status:needs-test`, move issue #N to `status:in-progress`, stop.
+   - It already has a `status:*` label → it is already in flight; no-op.
+3. Otherwise branch `feature/<N>-<slug>` off `origin/<base>`.
+4. Implement to satisfy the acceptance criteria. If `$BUILD` is set, run it to
    confirm the change compiles.
-4. Commit, push, open a PR whose body contains `Closes #N`:
+5. Commit, push, open a PR whose body contains `Closes #N`:
    ```bash
    gh pr create --repo "$REPO" --base <base> --head feature/<N>-<slug> \
      --title "<title>" --body "Closes #N
 
    🛠️ **Developer:** <what changed>" --label "status:needs-test"
    ```
-5. Move the issue: remove `status:backlog`, add `status:in-progress`.
+6. Move the issue: remove `status:backlog`, add `status:in-progress`.
 
 ## Mode B — address changes-requested on PR #P
 1. Read the tester's review comments. Check out the PR branch into a worktree,

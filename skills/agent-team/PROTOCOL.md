@@ -107,6 +107,9 @@ Every spawned agent **re-reads live state first** and no-ops if the world moved.
    repeatedly-failing cases, not for deflecting work.
 6. **Isolation:** dev/tester check out into a dedicated worktree under
    `$SCRATCH/wt-<branch>`, never the shared working copy.
+7. **Reuse, don't duplicate:** before opening a PR (or filing an issue), check
+   whether one already exists for this work and adopt it into the pipeline (label
+   it `status:needs-test`) instead of creating a competing copy.
 
 ## Required labels
 
