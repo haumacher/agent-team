@@ -1,0 +1,15 @@
+#!/usr/bin/env node
+// Print a resolved config value for the current project, for use in skills:
+//   REPO=$(agent-team-config repo)
+//   BUILD=$(agent-team-config build)
+// Keys: repo, build, test, channel, webhookId, configPath. Unknown/unset -> "".
+const path = require('path');
+const cfg = require(path.join(__dirname, '..', 'lib', 'config.js'));
+
+const key = process.argv[2] || '';
+const data = cfg.load();
+let out = '';
+if (key === 'repo') out = cfg.repo(data);
+else if (key === 'configPath') out = cfg.configPath();
+else if (key) out = data[key] != null ? data[key] : '';
+process.stdout.write(String(out));

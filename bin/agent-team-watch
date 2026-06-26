@@ -1,0 +1,50 @@
+#!/usr/bin/env node
+// Block until a new GitHub pull_request event arrives on the project's webhook
+// relay, reconnecting if the SSE stream drops. Prints a one-line JSON summary and
+// exits 0 on the first matching event — so it can be run as a background command
+// that wakes you on a new PR.
+//
+// Usage: agent-team-watch [action]    (action defaults to "opened")
+// Config: smee channel from `.agent-team.json` (CHANNEL env overrides).
+const https = require('https');
+const path = require('path');
+const cfg = require(path.join(__dirname, '..', 'lib', 'config.js'));
+
+const CHANNEL = process.env.CHANNEL || cfg.load().channel;
+const wantAction = process.argv[2] || 'opened';
+if (!CHANNEL) {
+  console.error('No webhook channel configured. Run /agent-team-setup first, ' +
+    'or set CHANNEL=https://smee.io/...');
+  process.exit(2);
+}
+
+function connect() {
+  https.get(CHANNEL, { headers: { Accept: 'text/event-stream' } }, res => {
+    res.setEncoding('utf8');
+    let buf = '';
+    res.on('data', chunk => {
+      buf += chunk;
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 1);
+        if (!line.startsWith('data:')) continue;
+        const json = line.slice(5).trim();
+        if (!json || json[0] !== '{') continue;
+        let p; try { p = JSON.parse(json); } catch { continue; }
+        if (p['x-github-event'] !== 'pull_request') continue;
+        const body = p.body || {};
+        if (body.action !== wantAction) continue;
+        const pr = body.pull_request || {};
+        console.log(JSON.stringify({
+          number: body.number, action: body.action, title: pr.title,
+          author: pr.user && pr.user.login, url: pr.html_url,
+        }));
+        res.destroy();
+        process.exit(0);
+      }
+    });
+    res.on('end', () => setTimeout(connect, 2000)); // upstream closed -> reconnect
+  }).on('error', e => { console.error(e.message); setTimeout(connect, 2000); });
+}
+
+connect();

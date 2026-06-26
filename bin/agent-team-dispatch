@@ -1,0 +1,130 @@
+#!/usr/bin/env node
+// Long-running dispatcher for the agent-team plugin.
+// Listens to the project's webhook relay (smee channel) and maps each GitHub
+// label transition to a role, spawning a one-shot headless `claude -p` agent to
+// do that unit of work. See skills/agent-team/PROTOCOL.md.
+//
+// Config: reads the smee channel from `.agent-team.json` (CHANNEL env overrides).
+// Env:
+//   CHANNEL      smee channel URL (default: config.channel)
+//   REPO         git working dir agents run in (default: cwd)
+//   PLUGIN_NS    skill namespace prefix (default: "agent-team")
+//   DRY_RUN      "1" -> log decisions only. DEFAULT IS LIVE: agents spawn and may
+//                push commits, open PRs, and merge. Set DRY_RUN=1 to preview.
+//   LOG_DIR      per-agent log directory (default: <tmp>/agent-team-logs)
+//   CLAUDE_FLAGS flags passed to `claude` (default: --permission-mode bypassPermissions)
+
+const https = require('https');
+const { spawn } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const cfg = require(path.join(__dirname, '..', 'lib', 'config.js'));
+
+const CHANNEL = process.env.CHANNEL || cfg.load().channel;
+const REPO = process.env.REPO || process.cwd();
+const NS = process.env.PLUGIN_NS || 'agent-team';
+const DRY_RUN = process.env.DRY_RUN === '1';          // default: LIVE
+const LOG_DIR = process.env.LOG_DIR || path.join(os.tmpdir(), 'agent-team-logs');
+const CLAUDE_FLAGS = (process.env.CLAUDE_FLAGS ||
+  '--permission-mode bypassPermissions').split(' ').filter(Boolean);
+
+if (!CHANNEL) {
+  console.error('No webhook channel configured. Run /agent-team-setup first, ' +
+    'or set CHANNEL=https://smee.io/...');
+  process.exit(2);
+}
+
+// label -> { which event it rides on, role skill, prompt builder }
+const ROUTES = {
+  'status:backlog': { on: 'issues', skill: 'role-developer',
+    prompt: n => `Mode A: implement backlog issue #${n}. Re-read live state first and stop if it is no longer status:backlog.` },
+  'status:needs-test': { on: 'pull_request', skill: 'role-tester',
+    prompt: n => `Test PR #${n} and record a verdict label.` },
+  'status:changes-requested': { on: 'pull_request', skill: 'role-developer',
+    prompt: n => `Mode B: address the requested changes on PR #${n}.` },
+  'status:ready-for-merge': { on: 'pull_request', skill: 'role-release',
+    prompt: n => `Merge PR #${n}, or send it back for a rebase on conflict.` },
+  'status:needs-rebase': { on: 'pull_request', skill: 'role-developer',
+    prompt: n => `Mode C: rebase PR #${n} onto the base branch.` },
+};
+
+const seenDeliveries = new Set();
+const inFlight = new Set();
+function log(...a) { console.log(new Date().toISOString(), ...a); }
+
+function decide(p) {
+  const event = p['x-github-event'];
+  const body = p.body || {};
+
+  // Unblock route: when an issue closes, re-arm PRs that were "Blocked by #N".
+  if (event === 'issues' && body.action === 'closed' && body.issue) {
+    const n = body.issue.number;
+    return { skill: 'role-pm', n, label: 'issue:closed',
+      prompt: `Mode unblock: issue #${n} just closed — re-arm any PRs commenting "Blocked by #${n}".` };
+  }
+
+  if (body.action !== 'labeled') return null;          // otherwise only label adds
+  const label = body.label && body.label.name;
+  const route = ROUTES[label];
+  if (!route || route.on !== event) return null;
+  const item = body.pull_request || body.issue;
+  if (!item) return null;
+  if ((item.labels || []).map(l => l.name).includes('blocked:needs-human')) return null;
+  return { skill: route.skill, n: item.number, label, prompt: route.prompt(item.number) };
+}
+
+function dispatch(d) {
+  const key = `${d.skill}#${d.n}`;
+  if (inFlight.has(key)) { log('skip (in-flight)', key); return; }
+  const fullPrompt = `Use the ${NS}:${d.skill} skill. ${d.prompt}`;
+  log(`ROUTE  ${d.label} -> ${NS}:${d.skill} on #${d.n}`);
+  if (DRY_RUN) { log('  DRY_RUN: would spawn', JSON.stringify(fullPrompt)); return; }
+
+  inFlight.add(key);
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), `agent-${d.skill}-${d.n}-`));
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const logPath = path.join(LOG_DIR, `${d.skill}-${d.n}-${stamp}.log`);
+  const out = fs.openSync(logPath, 'a');
+  fs.writeSync(out, `# ${NS}:${d.skill} on #${d.n}\n# prompt: ${fullPrompt}\n\n`);
+
+  const child = spawn('claude', ['-p', fullPrompt, '--verbose', ...CLAUDE_FLAGS], {
+    cwd: REPO,
+    env: { ...process.env, SCRATCH: scratch },
+    stdio: ['ignore', out, out],
+  });
+  log(`SPAWN  ${key} pid=${child.pid}  ▶ watch: tail -f "${logPath}"`);
+  const done = (msg) => { try { fs.closeSync(out); } catch {} inFlight.delete(key); log(msg); };
+  child.on('exit', code => done(`DONE   ${key} (exit ${code})  log: ${logPath}`));
+  child.on('error', e => done(`ERROR  ${key}: ${e.message}`));
+}
+
+function connect() {
+  fs.mkdirSync(LOG_DIR, { recursive: true });
+  log(`dispatcher up — channel=${CHANNEL} repo=${REPO} ns=${NS}`);
+  log(DRY_RUN
+    ? 'mode=DRY_RUN (decisions only, no agents spawned)'
+    : `mode=LIVE — agents WILL push/open/merge. logs: ${LOG_DIR}`);
+  https.get(CHANNEL, { headers: { Accept: 'text/event-stream' } }, res => {
+    res.setEncoding('utf8');
+    let buf = '';
+    res.on('data', chunk => {
+      buf += chunk;
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 1);
+        if (!line.startsWith('data:')) continue;
+        const json = line.slice(5).trim();
+        if (!json || json[0] !== '{') continue;
+        let p; try { p = JSON.parse(json); } catch { continue; }
+        const delivery = p['x-github-delivery'];
+        if (delivery) { if (seenDeliveries.has(delivery)) continue; seenDeliveries.add(delivery); }
+        const d = decide(p);
+        if (d) dispatch(d);
+      }
+    });
+    res.on('end', () => { log('stream closed, reconnecting in 2s'); setTimeout(connect, 2000); });
+  }).on('error', e => { log('connect error, retrying in 2s:', e.message); setTimeout(connect, 2000); });
+}
+
+connect();

@@ -1,0 +1,11 @@
+{
+  "name": "agent-team",
+  "displayName": "Agent Team",
+  "description": "A multi-agent software team — project manager, developer, tester, and release manager — coordinated entirely through GitHub issues, PRs, and labels. Push-driven via a webhook relay; each role is a one-shot agent spawned on label transitions.",
+  "version": "0.1.0",
+  "author": { "name": "Bernhard Haumacher" },
+  "homepage": "https://github.com/haumacher/agent-team",
+  "repository": "https://github.com/haumacher/agent-team",
+  "license": "MIT",
+  "keywords": ["github", "multi-agent", "automation", "workflow", "orchestration"]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "agent-team",
+  "owner": { "name": "Bernhard Haumacher" },
+  "plugins": [
+    {
+      "name": "agent-team",
+      "source": ".",
+      "description": "Multi-agent GitHub-coordinated software team (PM / developer / tester / release manager)."
+    }
+  ]
+}

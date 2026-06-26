@@ -1,0 +1,3 @@
+.agent-team.json
+*.log
+node_modules/

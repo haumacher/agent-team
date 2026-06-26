@@ -1,0 +1,7 @@
+{
+  "repo": "owner/name",
+  "channel": "https://smee.io/XXXXXXXXXXXX",
+  "webhookId": "123456789",
+  "build": "mvn -q -DskipTests package",
+  "test": "mvn -q verify"
+}
