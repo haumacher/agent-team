@@ -56,6 +56,34 @@ const seenDeliveries = new Set();
 const inFlight = new Set();
 function log(...a) { console.log(new Date().toISOString(), ...a); }
 
+// Turn one stream-json event into a concise human-readable line (or null to skip).
+function fmtEvent(o) {
+  const clip = (s, n = 200) => { s = String(s).replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n) + '…' : s; };
+  try {
+    if (o.type === 'system' && o.subtype === 'init') return `▶ session (${o.model || 'claude'})`;
+    if (o.type === 'assistant' && o.message) {
+      const lines = [];
+      for (const b of o.message.content || []) {
+        if (b.type === 'text' && b.text.trim()) lines.push('· ' + clip(b.text));
+        else if (b.type === 'tool_use') lines.push(`🔧 ${b.name}(${clip(JSON.stringify(b.input || {}), 160)})`);
+      }
+      return lines.length ? lines.join('\n') : null;
+    }
+    if (o.type === 'user' && o.message) {
+      for (const b of o.message.content || []) {
+        if (b.type === 'tool_result') {
+          let c = b.content;
+          if (Array.isArray(c)) c = c.map(x => (x && x.text) || '').join(' ');
+          return '   ↳ ' + clip(c, 160);
+        }
+      }
+      return null;
+    }
+    if (o.type === 'result') return `✅ ${o.subtype}${o.is_error ? ' (error)' : ''}\n${o.result || ''}`;
+  } catch {}
+  return null;
+}
+
 function decide(p) {
   const event = p['x-github-event'];
   const body = p.body || {};
@@ -88,16 +116,40 @@ function dispatch(d) {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), `agent-${d.skill}-${d.n}-`));
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const logPath = path.join(LOG_DIR, `${d.skill}-${d.n}-${stamp}.log`);
-  const out = fs.openSync(logPath, 'a');
+  const out = fs.openSync(logPath, 'a');                              // readable step log
+  const raw = fs.openSync(logPath.replace(/\.log$/, '.jsonl'), 'a');  // full-fidelity events
   fs.writeSync(out, `# ${NS}:${d.skill} on #${d.n}\n# prompt: ${fullPrompt}\n\n`);
 
-  const child = spawn('claude', ['-p', fullPrompt, '--verbose', ...CLAUDE_FLAGS], {
-    cwd: REPO,
-    env: { ...process.env, SCRATCH: scratch },
-    stdio: ['ignore', out, out],
-  });
+  // stream-json + --verbose emits one event per step (assistant text, tool_use,
+  // tool_result, final result). Parse it into readable lines so the work is
+  // visible live — not just the final answer.
+  const child = spawn('claude',
+    ['-p', fullPrompt, '--output-format', 'stream-json', '--verbose', ...CLAUDE_FLAGS], {
+      cwd: REPO,
+      env: { ...process.env, SCRATCH: scratch },
+      stdio: ['ignore', 'pipe', out],   // stderr -> log file
+    });
   log(`SPAWN  ${key} pid=${child.pid}  ▶ watch: tail -f "${logPath}"`);
-  const done = (msg) => { try { fs.closeSync(out); } catch {} inFlight.delete(key); log(msg); };
+
+  let buf = '';
+  child.stdout.on('data', chunk => {
+    fs.writeSync(raw, chunk);
+    buf += chunk.toString();
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i); buf = buf.slice(i + 1);
+      if (!line.trim()) continue;
+      let o; try { o = JSON.parse(line); } catch { continue; }
+      const s = fmtEvent(o);
+      if (s) fs.writeSync(out, `${new Date().toISOString().slice(11, 19)} ${s}\n`);
+    }
+  });
+
+  const done = (msg) => {
+    try { fs.closeSync(out); } catch {}
+    try { fs.closeSync(raw); } catch {}
+    inFlight.delete(key); log(msg);
+  };
   child.on('exit', code => done(`DONE   ${key} (exit ${code})  log: ${logPath}`));
   child.on('error', e => done(`ERROR  ${key}: ${e.message}`));
 }
@@ -130,4 +182,5 @@ function connect() {
   }).on('error', e => { log('connect error, retrying in 2s:', e.message); setTimeout(connect, 2000); });
 }
 
-connect();
+if (require.main === module) connect();
+module.exports = { fmtEvent, decide };
