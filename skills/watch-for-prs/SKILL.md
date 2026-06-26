@@ -11,7 +11,7 @@ Real blocking "wait for the next PR" without holding a socket across turns:
 GitHub (pull_request)  ──POST──▶  smee relay  ──SSE push──▶  agent-team-watch (blocks) ──exit──▶ wakes you
 ```
 
-Prerequisite: `/agent-team-setup` has provisioned the webhook + smee channel and
+Prerequisite: `/agent-team:setup` has provisioned the webhook + smee channel and
 written `.agent-team.json`. Then run the bundled watcher as a **background**
 command and let it block:
 

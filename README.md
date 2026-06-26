@@ -38,7 +38,7 @@ state machine, the *no-silent-drops* rule, and blocking/prioritization.
 From within the target repository:
 
 ```bash
-/agent-team-setup
+/agent-team:setup
 ```
 
 This creates a relay channel, registers the webhook (`issues` + `pull_request`),

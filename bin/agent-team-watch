@@ -13,7 +13,7 @@ const cfg = require(path.join(__dirname, '..', 'lib', 'config.js'));
 const CHANNEL = process.env.CHANNEL || cfg.load().channel;
 const wantAction = process.argv[2] || 'opened';
 if (!CHANNEL) {
-  console.error('No webhook channel configured. Run /agent-team-setup first, ' +
+  console.error('No webhook channel configured. Run /agent-team:setup first, ' +
     'or set CHANNEL=https://smee.io/...');
   process.exit(2);
 }

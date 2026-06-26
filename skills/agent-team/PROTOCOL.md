@@ -8,7 +8,7 @@ act once and exit.
 
 ## Project configuration
 
-Per-project settings live in `.agent-team.json` (created by `/agent-team-setup`).
+Per-project settings live in `.agent-team.json` (created by `/agent-team:setup`).
 Resolve them from any role with the bundled helper (it is on `PATH`):
 
 - Repo slug: `$(agent-team-config repo)` — falls back to `gh repo view` if unset.
@@ -110,6 +110,6 @@ Every spawned agent **re-reads live state first** and no-ops if the world moved.
 
 ## Required labels
 
-Created by `/agent-team-setup`: `status:{backlog,in-progress,needs-test,
+Created by `/agent-team:setup`: `status:{backlog,in-progress,needs-test,
 changes-requested,ready-for-merge,needs-rebase,blocked}`,
 `priority:{p0,p1,p2}`, `blocked:needs-human`.

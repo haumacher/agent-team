@@ -30,7 +30,7 @@ const CLAUDE_FLAGS = (process.env.CLAUDE_FLAGS ||
   '--permission-mode bypassPermissions').split(' ').filter(Boolean);
 
 if (!CHANNEL) {
-  console.error('No webhook channel configured. Run /agent-team-setup first, ' +
+  console.error('No webhook channel configured. Run /agent-team:setup first, ' +
     'or set CHANNEL=https://smee.io/...');
   process.exit(2);
 }
